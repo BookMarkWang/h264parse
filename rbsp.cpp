@@ -261,10 +261,6 @@ bool Rbsp::more_rbsp_data()
 SPS::SPS(std::vector<uint8_t> data):Rbsp(data)
 {
 	m_data = std::make_shared<SPSData>();
-	for(const auto & item: data)
-	{
-		std::cout << std::showbase << std::hex << static_cast<unsigned>(item) << " " << std::noshowbase;
-	}
 }
 
 eRbspState SPS::parse()
@@ -647,10 +643,6 @@ boost::property_tree::ptree VuiParam::get_json_value()
 PPS::PPS(std::vector<uint8_t> data):Rbsp(data)
 {
 	m_data = std::make_shared<PPSData>();
-	for(const auto & item: data)
-	{
-		std::cout << std::showbase << std::hex << static_cast<unsigned>(item) << " " << std::noshowbase;
-	}
 }
 
 eRbspState PPS::parse()

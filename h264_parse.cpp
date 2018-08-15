@@ -90,8 +90,11 @@ void H264Parser::start()
 			else
 			{
 				start_flag.push_back(data);
-				uint8_t size = level + 1>4?4:3;
-				start_flag.erase(start_flag.end() - size);
+				uint8_t size = ((level + 1)>=4)?4:3;
+				for(uint8_t i = 0; i < size; ++i)
+				{
+					start_flag.pop_back();
+				}
 				for(auto it = start_flag.cbegin(); it != start_flag.cend(); it++)
 				{
 					nal_unit.add_bytes(*it);
@@ -116,6 +119,7 @@ void H264Parser::start()
 		else
 		{
 			level = 0;
+			start_flag.clear();
 		}
 	}
 	if(m_stream.eof())
