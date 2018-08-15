@@ -158,6 +158,10 @@ struct PPSData
 	uint8_t transform_8x8_mode_flag;//u(1)
 	uint8_t pic_scaling_matrix_present_flag;//u(1)
 	std::vector<bool> pic_scaling_list_present_flag;//u(1)
+	std::array<std::array<uint8_t, 16>, 6> scaling_list_4x4;
+	std::array<uint8_t, 6> use_default_scaling_matix_4x4_flag;
+	std::array<std::array<uint8_t, 64>, 6> scaling_list_8x8;
+	std::array<uint8_t, 6> use_default_scaling_matix_8x8_flag;
 	int32_t second_chroma_qp_index_offset;//se(v)
 };
 
@@ -257,6 +261,10 @@ bool Rbsp::more_rbsp_data()
 SPS::SPS(std::vector<uint8_t> data):Rbsp(data)
 {
 	m_data = std::make_shared<SPSData>();
+	for(const auto & item: data)
+	{
+		std::cout << std::showbase << std::hex << static_cast<unsigned>(item) << " " << std::noshowbase;
+	}
 }
 
 eRbspState SPS::parse()
@@ -422,7 +430,7 @@ boost::property_tree::ptree SPS::get_json_value()
 
 
 template <std::size_t SIZE>
-eRbspState SPS::parse_scaling_list(std::array<uint8_t, SIZE>& scaling_list, uint8_t& matix_flag)
+eRbspState Rbsp::parse_scaling_list(std::array<uint8_t, SIZE>& scaling_list, uint8_t& matix_flag)
 {
 	eRbspState state = E_RBSP_STATE_OK;
 	uint8_t last_scale = 8, next_scale = 8;
@@ -638,16 +646,169 @@ boost::property_tree::ptree VuiParam::get_json_value()
 
 PPS::PPS(std::vector<uint8_t> data):Rbsp(data)
 {
+	m_data = std::make_shared<PPSData>();
+	for(const auto & item: data)
+	{
+		std::cout << std::showbase << std::hex << static_cast<unsigned>(item) << " " << std::noshowbase;
+	}
 }
 
 eRbspState PPS::parse()
 {
 	eRbspState state = E_RBSP_STATE_OK;
+	READ_EC(read_ue, m_data->pic_parameter_set_id);
+	READ_EC(read_ue, m_data->seq_parameter_set_id);
+	READ_BITS(m_data->entropy_coding_mode_flag, 1);
+	READ_BITS(m_data->pic_order_present_flag, 1);
+	READ_EC(read_ue, m_data->num_slice_groups_minus1);
+	if(m_data->num_slice_groups_minus1 > 0)
+	{
+		READ_EC(read_ue, m_data->slice_group_map_type);
+		if(0 == m_data->slice_group_map_type)
+		{
+			for(uint32_t i = 0; i < m_data->num_slice_groups_minus1; ++i)
+			{
+				uint32_t tmp = 0;
+				READ_EC(read_ue, tmp);
+				m_data->run_length_minus1.push_back(tmp);
+			}
+		}
+		else if( 2 == m_data->slice_group_map_type)
+		{
+			for(uint32_t i = 0; i < m_data->num_slice_groups_minus1; ++i)
+			{
+				uint32_t tmp = 0;
+				READ_EC(read_ue, tmp);
+				m_data->top_left.push_back(tmp);
+				tmp = 0;
+				READ_EC(read_ue, tmp);
+				m_data->bottom_right.push_back(tmp);
+			}
+		}
+		else if( 3 == m_data->slice_group_map_type || 
+			4 == m_data->slice_group_map_type ||
+			5 == m_data->slice_group_map_type)
+		{
+			READ_BITS(m_data->slice_group_change_direction_flag, 1);
+			READ_EC(read_ue, m_data->slice_group_change_rate_minus1);
+		}
+		else if( 6 == m_data->slice_group_map_type)
+		{
+			READ_EC(read_ue, m_data->pic_size_in_map_units_minus1);
+			uint32_t bit_num = std::ceil(std::exp2(m_data->num_slice_groups_minus1 + 1));
+			for(uint32_t i = 0; i < m_data->pic_size_in_map_units_minus1; ++i)
+			{
+				uint32_t tmp = 0;
+				READ_BITS(tmp, bit_num);
+				m_data->slice_group_id.push_back(tmp);
+			}
+		}
+	}
+	READ_EC(read_ue, m_data->num_ref_idx_l0_active_minus1);
+	READ_EC(read_ue, m_data->num_ref_idx_l1_active_minus1);
+	READ_BITS(m_data->weighted_pred_flag, 1);
+	READ_BITS(m_data->weighted_bipred_idc, 2);
+	READ_EC(read_se, m_data->pic_init_qp_minus26);
+	READ_EC(read_se, m_data->pic_init_qs_minus26);
+	READ_EC(read_se, m_data->chroma_qp_index_offset);
+	READ_BITS(m_data->deblocking_filter_control_present_flag, 1);
+	READ_BITS(m_data->constrained_intra_pred_flag, 1);
+	READ_BITS(m_data->redundant_pic_cnt_present_flag, 1);
+	TRACE_LOG("-----------------------%d", m_buffer.get_bits_num());
+	m_data->more_data = more_rbsp_data();
+	TRACE_LOG("-----------------------%d", m_buffer.get_bits_num());
+	if(m_data->more_data)
+	{
+		READ_BITS(m_data->transform_8x8_mode_flag, 1);
+		READ_BITS(m_data->pic_scaling_matrix_present_flag, 1);
+		if(m_data->pic_scaling_matrix_present_flag)
+		{
+			for(uint8_t i = 0; i < 6 + 2 * m_data->transform_8x8_mode_flag; ++i)
+			{
+				uint8_t tmp = 0;
+				READ_BITS(tmp, 1);
+				m_data->pic_scaling_list_present_flag.push_back(tmp);
+				if(tmp)
+				{
+					if(i < 6)
+					{
+						parse_scaling_list(m_data->scaling_list_4x4[i], m_data->use_default_scaling_matix_4x4_flag[i]);
+					}
+					else
+					{
+						parse_scaling_list(m_data->scaling_list_8x8[i-6], m_data->use_default_scaling_matix_8x8_flag[i-6]);
+					}
+				}
+			}
+		}
+		READ_EC(read_se, m_data->second_chroma_qp_index_offset);
+	}
+	state = parse_rbsp_trailing_bits();
+	return state;
+error:
 	return state;
 }
 
 boost::property_tree::ptree PPS::get_json_value()
 {
 	boost::property_tree::ptree root;
+	root.put("pic_parameter_set_id",  m_data->pic_parameter_set_id);
+	root.put("seq_parameter_set_id",  m_data->seq_parameter_set_id);
+	root.put("entropy_coding_mode_flag", static_cast<uint32_t>(m_data->entropy_coding_mode_flag));
+	root.put("pic_order_present_flag", static_cast<uint32_t>(m_data->pic_order_present_flag));
+	root.put("num_slice_groups_minus1", m_data->num_slice_groups_minus1);
+	if(m_data->num_slice_groups_minus1 > 0)
+	{
+		boost::property_tree::ptree slice_group_map;
+		slice_group_map.put("slice_group_map_type", m_data->slice_group_map_type);
+		if(0 == m_data->slice_group_map_type)
+		{
+			ADD_ARRAY(slice_group_map, run_length_minus1, m_data->run_length_minus1.cbegin(), m_data->run_length_minus1.cend());
+		}
+		else if( 2 == m_data->slice_group_map_type)
+		{
+			ADD_ARRAY(slice_group_map, top_left, m_data->top_left.cbegin(), m_data->top_left.cend());
+			ADD_ARRAY(slice_group_map, bottom_right, m_data->bottom_right.cbegin(), m_data->bottom_right.cend());
+		}
+		else if( 3 == m_data->slice_group_map_type || 
+			4 == m_data->slice_group_map_type ||
+			5 == m_data->slice_group_map_type)
+		{
+			slice_group_map.put("slice_group_change_direction_flag", static_cast<uint32_t>(m_data->slice_group_change_direction_flag));
+			slice_group_map.put("slice_group_change_rate_minus1", m_data->slice_group_change_rate_minus1);
+		}
+		else if( 6 == m_data->slice_group_map_type)
+		{
+			slice_group_map.put("pic_size_in_map_units_minus1", m_data->pic_size_in_map_units_minus1);
+			ADD_ARRAY(slice_group_map, slice_group_id, m_data->slice_group_id.cbegin(), m_data->slice_group_id.cend());
+		}
+		ADD_CHILD(root, slice_group_map);
+	}
+	root.put("num_ref_idx_l0_active_minus1", m_data->num_ref_idx_l0_active_minus1);
+	root.put("num_ref_idx_l1_active_minus1", m_data->num_ref_idx_l1_active_minus1);
+	root.put("weighted_pred_flag", static_cast<uint32_t>(m_data->weighted_pred_flag));
+	root.put("weighted_bipred_idc", static_cast<uint32_t>(m_data->weighted_bipred_idc));
+	root.put("pic_init_qp_minus26", m_data->pic_init_qp_minus26);
+	root.put("pic_init_qs_minus26", m_data->pic_init_qs_minus26);
+	root.put("chroma_qp_index_offset", m_data->chroma_qp_index_offset);
+	root.put("deblocking_filter_control_present_flag", static_cast<uint32_t>(m_data->deblocking_filter_control_present_flag));
+	root.put("constrained_intra_pred_flag", static_cast<uint32_t>(m_data->constrained_intra_pred_flag));
+	root.put("redundant_pic_cnt_present_flag", static_cast<uint32_t>(m_data->redundant_pic_cnt_present_flag));
+	if(m_data->more_data)
+	{
+		boost::property_tree::ptree more_rbsp_data;
+		more_rbsp_data.put("transform_8x8_mode_flag", static_cast<uint32_t>(m_data->transform_8x8_mode_flag));
+		more_rbsp_data.put("pic_scaling_matrix_present_flag", static_cast<uint32_t>(m_data->pic_scaling_matrix_present_flag));
+		if(m_data->pic_scaling_matrix_present_flag)
+		{
+			ADD_ARRAY(more_rbsp_data, pic_scaling_list_present_flag, m_data->pic_scaling_list_present_flag.cbegin(), m_data->pic_scaling_list_present_flag.cend());
+			ADD_ARRAY(root, use_default_scaling_matix_4x4_flag, m_data->use_default_scaling_matix_4x4_flag.cbegin(), m_data->use_default_scaling_matix_4x4_flag.cend());
+			ADD_ARRAY(root, use_default_scaling_matix_8x8_flag, m_data->use_default_scaling_matix_8x8_flag.cbegin(), m_data->use_default_scaling_matix_8x8_flag.cend());
+			//scaling_list_4x4
+			//scaling_list_8x8
+		}
+		more_rbsp_data.put("second_chroma_qp_index_offset", m_data->second_chroma_qp_index_offset);
+		ADD_CHILD(root, more_rbsp_data);
+	}
 	return root;
 }

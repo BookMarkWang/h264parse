@@ -33,6 +33,8 @@ public:
 	virtual boost::property_tree::ptree get_json_value() = 0;
 	eRbspState parse_rbsp_trailing_bits();
 	bool more_rbsp_data();
+	template <std::size_t SIZE>
+	eRbspState parse_scaling_list(std::array<uint8_t, SIZE>& scaling_list, uint8_t& matix_flag);
 protected:
 	BitBuffer m_buffer;
 };
@@ -69,8 +71,6 @@ public:
 private:
 	std::shared_ptr<SPSData> m_data;
 private:
-	template <std::size_t SIZE>
-	eRbspState parse_scaling_list(std::array<uint8_t, SIZE>& scaling_list, uint8_t& matix_flag);
 	eRbspState parse_vui_parameters();
 	eRbspState parse_hrd_parameters(HrdParam& hrd_param);
 };
