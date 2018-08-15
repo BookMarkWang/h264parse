@@ -79,10 +79,10 @@ void NalUnit::parse()
 		m_rbsp = std::make_shared<SPS>(m_rbsp_data);
 		m_rbsp->parse();
 		break;
-	case 8:
+	/*case 8:
 		m_rbsp = std::make_shared<PPS>(m_rbsp_data);
 		m_rbsp->parse();
-		break;
+		break;*/
 	default:
 		TRACE_WARNING("Unhandled branch!");
 		break;
