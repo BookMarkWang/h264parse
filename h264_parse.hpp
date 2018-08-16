@@ -19,6 +19,8 @@ public:
 private:
 	std::ifstream m_stream;
 	std::vector<NalUnit> m_nal_unit;
+	std::vector<std::shared_ptr<SPS>> m_sps;
+	std::vector<std::shared_ptr<PPS>> m_pps;
 };
 
 #endif //__H264_PARSER_HPP__

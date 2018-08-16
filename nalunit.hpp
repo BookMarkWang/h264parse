@@ -19,7 +19,7 @@ public:
 	uint8_t get_nal_forbidden_bit();
 	uint8_t get_nal_ref_idc();
 	uint8_t get_nal_unit_type();
-	void parse();
+	void parse(std::vector<std::shared_ptr<SPS>>& sps, std::vector<std::shared_ptr<PPS>>& pps);
 	friend std::ostream& operator<<(std::ostream& os, const NalUnit& nal_unit);
 private:
 	uint8_t m_forbidden_zero_bit;

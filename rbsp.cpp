@@ -192,7 +192,7 @@ eRbspState Rbsp::read_se(int32_t& value)
 {
 	uint32_t tmp = 0;
 	eRbspState state = read_ue(tmp);
-	value = std::pow(-1, tmp) * std::ceil(tmp/2);
+	value = std::pow(-1, tmp + 1) * std::ceil(tmp/2);
 	return state;
 }
 
@@ -640,16 +640,26 @@ boost::property_tree::ptree VuiParam::get_json_value()
 	return root;
 }
 
-PPS::PPS(std::vector<uint8_t> data):Rbsp(data)
+PPS::PPS(std::vector<uint8_t> data, std::vector<std::shared_ptr<SPS>> sps):Rbsp(data)
 {
 	m_data = std::make_shared<PPSData>();
+	m_sps = sps;
 }
 
 eRbspState PPS::parse()
 {
 	eRbspState state = E_RBSP_STATE_OK;
+	std::shared_ptr<SPSData> sps;
 	READ_EC(read_ue, m_data->pic_parameter_set_id);
 	READ_EC(read_ue, m_data->seq_parameter_set_id);
+	for(auto it = m_sps.begin(); it != m_sps.end(); it++)
+	{
+		if(it->get()->m_data->seq_parameter_set_id == m_data->seq_parameter_set_id)
+		{
+			sps = it->get()->m_data;
+			break;
+		}
+	}
 	READ_BITS(m_data->entropy_coding_mode_flag, 1);
 	READ_BITS(m_data->pic_order_present_flag, 1);
 	READ_EC(read_ue, m_data->num_slice_groups_minus1);

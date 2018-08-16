@@ -71,18 +71,26 @@ uint8_t NalUnit::get_nal_unit_type()
 	return m_nal_unit_type;
 }
 
-void NalUnit::parse()
+void NalUnit::parse(std::vector<std::shared_ptr<SPS>>& sps, std::vector<std::shared_ptr<PPS>>& pps)
 {
 	switch(m_nal_unit_type)
 	{
 	case 7:
-		m_rbsp = std::make_shared<SPS>(m_rbsp_data);
+	{
+		std::shared_ptr<SPS> tmp = std::make_shared<SPS>(m_rbsp_data);
+		sps.push_back(tmp);
+		m_rbsp = tmp;
 		m_rbsp->parse();
 		break;
+	}
 	case 8:
-		m_rbsp = std::make_shared<PPS>(m_rbsp_data);
+	{
+		std::shared_ptr<PPS> tmp = std::make_shared<PPS>(m_rbsp_data, sps);
+		pps.push_back(tmp);
+		m_rbsp = tmp;
 		m_rbsp->parse();
 		break;
+	}
 	default:
 		TRACE_WARNING("Unhandled branch!");
 		break;

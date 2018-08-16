@@ -65,6 +65,7 @@ typedef enum _eAspectRatio
 class SPS : public Rbsp
 {
 public:
+	friend class PPS;
 	SPS(std::vector<uint8_t> data);
 	eRbspState parse();
 	boost::property_tree::ptree get_json_value();
@@ -79,11 +80,12 @@ struct PPSData;
 class PPS : public Rbsp
 {
 public:
-	PPS(std::vector<uint8_t> data);
+	PPS(std::vector<uint8_t> data, std::vector<std::shared_ptr<SPS>> sps);
 	eRbspState parse();
 	boost::property_tree::ptree get_json_value();
 private:
 	std::shared_ptr<PPSData> m_data;
+	std::vector<std::shared_ptr<SPS>> m_sps;
 };
 /*
 class SEI : public Rbsp

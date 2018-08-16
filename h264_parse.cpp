@@ -101,7 +101,7 @@ void H264Parser::start()
 				}
 				start_flag.clear();
 				level = 0;
-				nal_unit.parse();
+				nal_unit.parse(m_sps, m_pps);
 				m_nal_unit.push_back(nal_unit);
 				nal_unit.clear();
 			}
@@ -132,7 +132,7 @@ void H264Parser::start()
 			}
 			start_flag.clear();
 			level = 0;
-			nal_unit.parse();
+			nal_unit.parse(m_sps, m_pps);
 			m_nal_unit.push_back(nal_unit);
 			nal_unit.clear();
 			is_content = false;

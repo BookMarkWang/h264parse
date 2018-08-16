@@ -6,7 +6,7 @@ PATH_TO_SDK := /home/ywang75/study/3rd_party
 BIN := test
   
 CC := g++
-CFLAGS := -O0 -g -std=c++11
+CFLAGS := -O0 -g -std=c++11 #-fno-stack-protector
   
 SOURCE := $(wildcard ../*.cpp) $(wildcard *.cpp)
 OBJS := $(patsubst %.cpp, %.o, $(SOURCE))
