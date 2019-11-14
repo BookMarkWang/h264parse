@@ -22,10 +22,7 @@ public:
 	void parse(std::vector<std::shared_ptr<SPS>>& sps, std::vector<std::shared_ptr<PPS>>& pps);
 	friend std::ostream& operator<<(std::ostream& os, const NalUnit& nal_unit);
 private:
-	uint8_t m_forbidden_zero_bit;
-	uint8_t m_nal_ref_idc;
-	uint8_t m_nal_unit_type;
-	std::vector<uint8_t> m_rbsp_data;
+	NalUnitData m_data;
 	bool m_reach_threshold;
 	bool m_nal_head;
 	std::shared_ptr<Rbsp> m_rbsp;

@@ -15,6 +15,26 @@
 				goto error;\
 		}
 
+#define READ_BITS_RANGE(value, size, min, max)\
+		{\
+			READ_BITS(value, size);\
+			if(value < min || value > max)\
+			{\
+				TRACE_ERROR("%s(%d) over the range[%d,%d]", #value, value, min, max);\
+				goto error;\
+			}\
+		}
+
+#define READ_EC_RANGE(func, value, min, max)\
+		{\
+			READ_EC(func, value);\
+			if(value < min || value > max)\
+			{\
+				TRACE_ERROR("%s(%d) over the range[%d,%d]", #value, value, min, max);\
+				goto error;\
+			}\
+		}
+
 #define ADD_UINT_CAST(param, value) param.put(#value, static_cast<unsigned>(value))
 #define ADD_NO_CAST(param, value) param.put(#value, value)
 #define ADD_CHILD(param, value) param.add_child(#value, value)
@@ -29,6 +49,14 @@
 			}\
 			param.add_child(#value, tmp);\
 		}
+
+#define H264_IS_P_SLICE(slice)  (((slice)->slice_type % 5) == H264_P_SLICE)
+#define H264_IS_B_SLICE(slice)  (((slice)->slice_type % 5) == H264_B_SLICE)
+#define H264_IS_I_SLICE(slice)  (((slice)->slice_type % 5) == H264_I_SLICE)
+#define H264_IS_SP_SLICE(slice) (((slice)->slice_type % 5) == H264_SP_SLICE)
+#define H264_IS_SI_SLICE(slice) (((slice)->slice_type % 5) == H264_SI_SLICE)
+
+
 
 struct HrdParam
 {
@@ -163,16 +191,113 @@ struct PPSData
 	std::array<std::array<uint8_t, 64>, 6> scaling_list_8x8;
 	std::array<uint8_t, 6> use_default_scaling_matix_8x8_flag;
 	int32_t second_chroma_qp_index_offset;//se(v)
+	std::shared_ptr<SPS> sps;
 };
 
-Rbsp::Rbsp(std::vector<uint8_t> data)
+struct RefPicListReorderingItem
 {
-	std::deque<uint8_t> tmp(data.cbegin(), data.cend());
+	uint32_t reordering_of_pic_nums_idc;
+	union
+	{
+		/* if modification_of_pic_nums_idc == 0 || 1 */
+		uint32_t abs_diff_pic_num_minus1;//ue(v)
+ 		/* if modification_of_pic_nums_idc == 2 */
+		uint32_t long_term_pic_num;//ue(v)
+		/* if modification_of_pic_nums_idc == 4 || 5 */
+		uint32_t abs_diff_view_idx_minus1;//ue(v)
+	} value;
+};
+
+struct RefPicListReordering
+{
+	boost::property_tree::ptree get_json_value();
+	uint8_t ref_pic_list_reordering_flag_l0;//u(1)
+	std::vector<RefPicListReorderingItem> ref_pic_list_reordering_10;
+	uint8_t ref_pic_list_reordering_flag_l1;//u(1)
+	std::vector<RefPicListReorderingItem> ref_pic_list_reordering_11;
+};
+
+struct PredWeightTable
+{
+	boost::property_tree::ptree get_json_value();
+	uint32_t luma_log2_weight_denom;//ue(v)
+	uint32_t chroma_log2_weight_denom;//ue(v)
+	std::vector<uint8_t> luma_weight_l0_flag;//u(1)
+	std::vector<int32_t> luma_weight_l0;//se(v)
+	std::vector<int32_t> luma_offset_l0;//se(v)
+	std::vector<uint8_t> chroma_weight_l0_flag;//u(1)
+	std::vector<std::array<int32_t, 2>> chroma_weight_l0;//se(v)
+	std::vector<std::array<int32_t, 2>> chroma_offset_l0;//se(v)
+	std::vector<uint8_t> luma_weight_l1_flag;//u(1)
+	std::vector<int32_t> luma_weight_l1;//se(v)
+	std::vector<int32_t> luma_offset_l1;//se(v)
+	std::vector<uint8_t> chroma_weight_l1_flag;//u(1)
+	std::vector<std::array<int32_t, 2>> chroma_weight_l1;//se(v)
+	std::vector<std::array<int32_t, 2>> chroma_offset_l1;//se(v)
+};
+
+struct MMCO
+{
+	uint32_t memory_management_control_operation;//ue(v)
+	uint32_t difference_of_pic_nums_minus1;//ue(v)
+	uint32_t long_term_pic_num;//ue(v)
+	uint32_t long_term_frame_idx;//ue(v)
+	uint32_t max_long_term_frame_idx_plus1;//ue(v)
+};
+
+struct DecRefPicMarking
+{
+	boost::property_tree::ptree get_json_value();
+	uint8_t no_output_of_prior_pics_flag;//u(1)
+	uint8_t long_term_reference_flag;//u(1)
+	uint8_t adaptive_ref_pic_marking_mode_flag;//u(1)
+	std::array<MMCO, 10> memory_management_control;
+};
+
+struct SliceHeader
+{
+	boost::property_tree::ptree get_json_value();
+	uint32_t first_mb_in_slice;//ue(v)
+	uint32_t slice_type;//ue(v)
+	uint32_t pic_parameter_set_id;//ue(v)
+	uint32_t frame_num;//u(v)
+	uint8_t field_pic_flag;//u(1)
+	uint8_t bottom_field_flag;//u(1)
+	uint32_t idr_pic_id;//ue(v)
+	uint32_t pic_order_cnt_lsb;//u(v)
+	int32_t delta_pic_order_cnt_bottom;//se(v)
+	std::array<int32_t, 2> delta_pic_order_cnt;//se(v)
+	uint32_t redundant_pic_cnt;//ue(v)
+	uint8_t direct_spatial_mv_pred_flag;//u(1)
+	uint8_t num_ref_idx_active_override_flag;//u(1)
+	uint32_t num_ref_idx_l0_active_minus1;//ue(v)
+	uint32_t num_ref_idx_l1_active_minus1;//ue(v)
+	RefPicListReordering ref_pic_list_reordering;
+	PredWeightTable pred_weight_table;
+	DecRefPicMarking dec_ref_pic_marking;
+	uint32_t cabac_init_idc;//ue(v)
+	int32_t slice_qp_delta;//se(v)
+	uint8_t sp_for_switch_flag;//u(1)
+	int32_t slice_qs_delta;//se(v)
+	uint32_t disable_deblocking_filter_idc;//ue(v)
+	int32_t slice_alpha_c0_offset_div2;//se(v)
+	int32_t slice_beta_offset_div2;//se(v)
+	uint32_t slice_group_change_cycle;//u(v)
+	std::shared_ptr<PPS> pps;
+};
+
+Rbsp::Rbsp(NalUnitData data)
+{
+	std::deque<uint8_t> tmp(data.rbsp_data.cbegin(), data.rbsp_data.cend());
 	m_buffer.add_bytes(tmp);
+	m_nal_data = data;
 }
 
 eRbspState Rbsp::read_ue(uint32_t& value)
 {
+	eRbspState ref_pic_list_reordering(RefPicListReordering& ref_pic_list_reordering);
+	eRbspState pred_weight_table(PredWeightTable& pred_weight_table);
+	eRbspState dec_ref_pic_marking(DecRefPicMarking& dec_ref_pic_marking);
 	eRbspState state = E_RBSP_STATE_OK;
 	int32_t leading_zero_bit = -1;
 	for(uint8_t i = 0; !i || E_RBSP_STATE_OK != state; ++leading_zero_bit)
@@ -258,7 +383,7 @@ bool Rbsp::more_rbsp_data()
 	return ret;
 }
 
-SPS::SPS(std::vector<uint8_t> data):Rbsp(data)
+SPS::SPS(NalUnitData data):Rbsp(data)
 {
 	m_data = std::make_shared<SPSData>();
 }
@@ -640,7 +765,7 @@ boost::property_tree::ptree VuiParam::get_json_value()
 	return root;
 }
 
-PPS::PPS(std::vector<uint8_t> data, std::vector<std::shared_ptr<SPS>> sps):Rbsp(data)
+PPS::PPS(NalUnitData data, std::vector<std::shared_ptr<SPS>> sps):Rbsp(data)
 {
 	m_data = std::make_shared<PPSData>();
 	m_sps = sps;
@@ -649,14 +774,13 @@ PPS::PPS(std::vector<uint8_t> data, std::vector<std::shared_ptr<SPS>> sps):Rbsp(
 eRbspState PPS::parse()
 {
 	eRbspState state = E_RBSP_STATE_OK;
-	std::shared_ptr<SPSData> sps;
 	READ_EC(read_ue, m_data->pic_parameter_set_id);
 	READ_EC(read_ue, m_data->seq_parameter_set_id);
 	for(auto it = m_sps.begin(); it != m_sps.end(); it++)
 	{
 		if(it->get()->m_data->seq_parameter_set_id == m_data->seq_parameter_set_id)
 		{
-			sps = it->get()->m_data;
+			m_data->sps = *it;
 			break;
 		}
 	}
@@ -716,9 +840,7 @@ eRbspState PPS::parse()
 	READ_BITS(m_data->deblocking_filter_control_present_flag, 1);
 	READ_BITS(m_data->constrained_intra_pred_flag, 1);
 	READ_BITS(m_data->redundant_pic_cnt_present_flag, 1);
-	TRACE_LOG("-----------------------%d", m_buffer.get_bits_num());
 	m_data->more_data = more_rbsp_data();
-	TRACE_LOG("-----------------------%d", m_buffer.get_bits_num());
 	if(m_data->more_data)
 	{
 		READ_BITS(m_data->transform_8x8_mode_flag, 1);
@@ -812,5 +934,394 @@ boost::property_tree::ptree PPS::get_json_value()
 		more_rbsp_data.put("second_chroma_qp_index_offset", m_data->second_chroma_qp_index_offset);
 		ADD_CHILD(root, more_rbsp_data);
 	}
+	return root;
+}
+
+IDR::IDR(NalUnitData data, std::vector<std::shared_ptr<PPS>> pps):Rbsp(data)
+{
+	m_pps = pps;
+	m_slice_header = std::make_shared<SliceHeader>();
+}
+
+eRbspState IDR::parse()
+{
+	return slice_layer_without_partitioning_rbsp();
+}
+
+eRbspState IDR::slice_layer_without_partitioning_rbsp()
+{
+	eRbspState state = E_RBSP_STATE_OK;
+	state = slice_header(m_slice_header);
+	state = slice_data();
+	state = rbsp_slice_trailing_bits();
+	return state;
+}
+
+eRbspState IDR::slice_header(std::shared_ptr<SliceHeader> header)
+{
+	eRbspState state = E_RBSP_STATE_OK;
+	READ_EC(read_ue, header->first_mb_in_slice);
+	READ_EC(read_ue, header->slice_type);
+	READ_EC(read_ue, header->pic_parameter_set_id);
+	for(auto it = m_pps.cbegin(); it != m_pps.cend(); it++)
+	{
+		if(it->get()->m_data->pic_parameter_set_id == header->pic_parameter_set_id)
+		{
+			header->pps = *it;
+			break;
+		}
+	}
+	std::shared_ptr<SPS> sps =  header->pps->m_data->sps;
+	READ_BITS(header->frame_num, sps->m_data->log2_max_frame_num_minus4 + 4);
+	if(!sps->m_data->frame_mbs_only_flag)
+	{
+		READ_BITS(header->field_pic_flag, 1);
+		if(header->field_pic_flag)
+		{
+			READ_BITS(header->bottom_field_flag, 1);
+		}
+	}
+	if( 5 == m_nal_data.nal_unit_type )
+	{
+		READ_EC(read_ue, header->idr_pic_id);
+	}
+	if(0 == sps->m_data->pic_order_cnt_type)
+	{
+		READ_BITS(header->pic_order_cnt_lsb, sps->m_data->log2_max_pic_order_cnt_lsb_minus4 + 4);
+		if(header->pps->m_data->pic_order_present_flag && !header->field_pic_flag)
+		{
+			READ_EC(read_se, header->delta_pic_order_cnt_bottom);
+		}
+	}
+	if(1 == sps->m_data->pic_order_cnt_type && !sps->m_data->delta_pic_order_always_zero_flag)
+	{
+		READ_EC(read_se, header->delta_pic_order_cnt[0]);
+		if(header->pps->m_data->pic_order_present_flag && !header->field_pic_flag)
+		{
+			 READ_EC(read_se, header->delta_pic_order_cnt[1]);
+		}
+	}
+	if(header->pps->m_data->redundant_pic_cnt_present_flag)
+	{
+		READ_EC(read_ue, header->redundant_pic_cnt);
+	}
+	if(H264_IS_B_SLICE(header))
+	{
+		READ_BITS(header->direct_spatial_mv_pred_flag, 1);
+	}
+	if(H264_IS_B_SLICE(header) || H264_IS_P_SLICE(header) || H264_IS_SP_SLICE(header))
+	{
+		READ_BITS(header->num_ref_idx_active_override_flag, 1);
+		if(header->num_ref_idx_active_override_flag)
+		{
+			READ_EC(read_ue, header->num_ref_idx_l0_active_minus1);
+			if(H264_IS_B_SLICE(header))
+			{
+				READ_EC(read_ue, header->num_ref_idx_l1_active_minus1);
+			}
+		}
+	}
+	state = ref_pic_list_reordering(header);
+	if( (header->pps->m_data->weighted_pred_flag && (H264_IS_P_SLICE(header) || H264_IS_SP_SLICE(header))) ||
+			(1 == header->pps->m_data->weighted_bipred_idc && H264_IS_B_SLICE(header)) )
+	{
+		state = pred_weight_table(header);
+	}
+	if( 0 != m_nal_data.nal_ref_idc)
+	{
+		state = dec_ref_pic_marking(header);
+	}
+	if( header->pps->m_data->entropy_coding_mode_flag && !H264_IS_I_SLICE(header) && !H264_IS_SI_SLICE(header))
+	{
+		READ_EC(read_ue, header->cabac_init_idc);
+	}
+	READ_EC(read_se, header->slice_qp_delta);
+	if(H264_IS_SP_SLICE(header) || H264_IS_SI_SLICE(header))
+	{
+		if(H264_IS_SP_SLICE(header))
+		{
+			READ_BITS(header->sp_for_switch_flag, 1);
+		}
+		READ_EC(read_se, header->slice_qs_delta);
+	}
+	if(header->pps->m_data->deblocking_filter_control_present_flag)
+	{
+		READ_EC(read_ue, header->disable_deblocking_filter_idc);
+		if(header->disable_deblocking_filter_idc != 1)
+		{
+			READ_EC(read_se, header->slice_alpha_c0_offset_div2);
+			READ_EC(read_se, header->slice_beta_offset_div2);
+		}
+	}
+	if(header->pps->m_data->num_slice_groups_minus1 > 0 && 
+		header->pps->m_data->slice_group_map_type >= 3 &&
+		header->pps->m_data->slice_group_map_type <= 5)
+	{
+		uint32_t PicWidthInMbs = sps->m_data->pic_width_in_mbs_minus1 + 1;
+		uint32_t PicHeightInMapUnits = header->pps->m_data->pic_height_in_map_units_minus1 + 1;
+		uint32_t PicSizeInMapUnits = PicWidthInMbs * PicHeightInMapUnits;
+		uint32_t SliceGroupChangeRate = header->pps->m_data->slice_group_change_rate_minus1 + 1;
+		uint32_t n = std::ceil(std::log2(PicSizeInMapUnits / SliceGroupChangeRate + 1));
+		READ_BITS(header->slice_group_change_cycle, n);
+	}
+	return state;
+error:
+	return state;
+}
+
+eRbspState IDR::ref_pic_list_reordering(std::shared_ptr<SliceHeader> header)
+{
+	eRbspState state = E_RBSP_STATE_OK;
+	RefPicListReordering &data = header->ref_pic_list_reodering;
+	if( !H264_IS_I_SLICE(header) && !H264_IS_SI_SLICE(header) )
+	{
+		READ_BITS(data.ref_pic_list_reordering_flag_l0, 1)
+		if(data.ref_pic_list_reordering_flag_l0)
+		{
+			do
+			{
+				RefPicListReorderingItem item;
+				READ_EC(read_ue, item.reordering_of_pic_nums_idc);
+				if( 0 == item.reordering_of_pic_nums_idc ||
+					1 == item.reordering_of_pic_nums_idc )
+				{
+					READ_EC(read_ue, item.value.abs_diff_pic_num_minus1);
+					data.ref_pic_list_reordering_10.push_back(item);
+				}
+				else if(2 == item.reordering_of_pic_nums_idc)
+				{
+					READ_EC(read_ue, item.value.long_term_pic_num);
+					data.ref_pic_list_reordering_10.push_back(item);
+				}
+				else if( 4 == item.reordering_of_pic_nums_idc ||
+					5 == item.reordering_of_pic_nums_idc )
+				{
+					READ_EC(read_ue, item.value.abs_diff_view_idx_minus1);
+					data.ref_pic_list_reordering_10.push_back(item);
+				}
+			}while(3 != item.reordering_of_pic_nums_idc);
+		}
+	}
+	if(H264_IS_B_SLICE(header))
+	{
+		READ_BITS(data.ref_pic_list_reordering_flag_l1, 1)
+		if(data.ref_pic_list_reordering_flag_l1)
+		{
+			do
+			{
+				RefPicListReorderingItem item;
+				READ_EC(read_ue, item.reordering_of_pic_nums_idc);
+				if( 0 == item.reordering_of_pic_nums_idc ||
+					1 == item.reordering_of_pic_nums_idc )
+				{
+					READ_EC(read_ue, item.value.abs_diff_pic_num_minus1);
+					data.ref_pic_list_reordering_11.push_back(item);
+				}
+				else if(2 == item.reordering_of_pic_nums_idc)
+				{
+					READ_EC(read_ue, item.value.long_term_pic_num);
+					data.ref_pic_list_reordering_11.push_back(item);
+				}
+				else if( 4 == item.reordering_of_pic_nums_idc ||
+					5 == item.reordering_of_pic_nums_idc )
+				{
+					READ_EC(read_ue, item.value.abs_diff_view_idx_minus1);
+					data.ref_pic_list_reordering_11.push_back(item);
+				}
+			}while(3 != item.reordering_of_pic_nums_idc);
+		}
+	}
+	return state;
+error:
+	return state;
+}
+
+eRbspState IDR::pred_weight_table(std::shared_ptr<SliceHeader> header)
+{
+	eRbspState state = E_RBSP_STATE_OK;
+	PredWeightTable& pred_weight_table = header->pred_weight_table;
+	READ_EC_RANGE(read_ue, pred_weight_table.luma_log2_weight_denom, 0, 7);
+	if(header->pps->m_data->sps->m_data->chroma_format_idc != 0)
+	{
+		READ_EC_RANGE(read_ue, pred_weight_table.chroma_log2_weight_denom, 0, 7);
+	}
+	for(uint i = 0; i < header->num_ref_idx_l0_active_minus1; ++i)
+	{
+		READ_BITS(pred_weight_table.luma_weight_l0_flag, 1);
+		if(pred_weight_table.luma_weight_l0_flag)
+		{
+			int32_t tmp = 0;
+			READ_EC_RANGE(read_se, tmp, -128, 127);
+			pred_weight_table.luma_weight_l0.push_back(tmp);
+			READ_EC_RANGE(read_se, tmp, -128, 127);
+			pred_weight_table.luma_offset_l0.push_back(tmp);
+		}
+		else
+		{
+			//default value //7.4.3.2
+			pred_weight_table.luma_weight_l0.push_back(std::exp2( pred_weight_table.luma_log2_weight_denom));
+			pred_weight_table.luma_weight_l0.push_back(0);
+		}
+		if(header->pps->m_data->sps->m_data->chroma_format_idc != 0)
+		{
+			READ_BITS(pred_weight_table.chroma_weight_l0_flag, 1);
+			if(pred_weight_table.chroma_weight_l0_flag)
+			{
+				std::array<int32_t, 2> weight_tmp, offset_tmp;
+				for(uint8_t j = 0; j < 2; ++j)
+				{
+					READ_EC_RANGE(read_se, weight_tmp[j], -128, 127);
+					READ_EC_RANGE(read_se, offset_tmp[j], -128, 127);
+				}
+				pred_weight_table.chroma_weight_l0.push_back(weight_tmp);
+				pred_weight_table.chroma_offset_l0.push_back(offset_tmp);
+			}
+			else
+			{
+				//default //7.4.3.2
+				pred_weight_table.chroma_weight_l0.push_back(std::array<int32_t, 2>{std::exp2(pred_weight_table.chroma_log2_weight_denom)});
+				pred_weight_table.chroma_offset_l0.push_back(std::array<int32_t, 2>{0,0});
+			}
+		}
+		else
+		{
+			//default //7.4.3.2
+			pred_weight_table.chroma_weight_l0.push_back(std::array<int32_t, 2>{std::exp2(pred_weight_table.chroma_log2_weight_denom)});
+			pred_weight_table.chroma_offset_l0.push_back(std::array<int32_t, 2>{0,0});
+		}
+	}
+	if(H264_IS_B_SLICE(header))
+	{
+		for(uint i = 0; i < header->num_ref_idx_l1_active_minus1; ++i)
+		{
+			READ_BITS(pred_weight_table.luma_weight_l1_flag, 1);
+			if(pred_weight_table.luma_weight_l1_flag)
+			{
+				int32_t tmp = 0;
+				READ_EC_RANGE(read_se, tmp, -128, 127);
+				pred_weight_table.luma_weight_l1.push_back(tmp);
+				READ_EC_RANGE(read_se, tmp, -128, 127);
+				pred_weight_table.luma_offset_l1.push_back(tmp);
+			}
+			else
+			{
+				//default value //7.4.3.2
+				pred_weight_table.luma_weight_l1.push_back(std::exp2( pred_weight_table.luma_log2_weight_denom));
+				pred_weight_table.luma_weight_l1.push_back(0);
+			}
+			if(header->pps->m_data->sps->m_data->chroma_format_idc != 0)
+			{
+				READ_BITS(pred_weight_table.chroma_weight_l1_flag, 1);
+				if(pred_weight_table.chroma_weight_l1_flag)
+				{
+					std::array<int32_t, 2> weight_tmp, offset_tmp;
+					for(uint8_t j = 0; j < 2; ++j)
+					{
+						READ_EC_RANGE(read_se, weight_tmp[j], -128, 127);
+						READ_EC_RANGE(read_se, offset_tmp[j], -128, 127);
+					}
+					pred_weight_table.chroma_weight_l1.push_back(weight_tmp);
+					pred_weight_table.chroma_offset_l1.push_back(offset_tmp);
+				}
+				else
+				{
+					//default //7.4.3.2
+					pred_weight_table.chroma_weight_l1.push_back(std::array<int32_t, 2>{std::exp2(pred_weight_table.chroma_log2_weight_denom), std::exp2(pred_weight_table.chroma_log2_weight_denom)});
+					pred_weight_table.chroma_offset_l1.push_back(std::array<int32_t, 2>{0,0});
+				}
+			}
+			else
+			{
+				//default //7.4.3.2
+				pred_weight_table.chroma_weight_l1.push_back(std::array<int32_t, 2>{std::exp2(pred_weight_table.chroma_log2_weight_denom), std::exp2(pred_weight_table.chroma_log2_weight_denom)});
+				pred_weight_table.chroma_offset_l1.push_back(std::array<int32_t, 2>{0,0});
+			}
+		}
+	}
+	return state;
+error:
+	return state;
+}
+
+eRbspState IDR::dec_ref_pic_marking(std::shared_ptr<SliceHeader> header)
+{
+	eRbspState state= E_RBSP_STATE_OK;
+	DecRefPicMarking& dec_ref_pic_marking = header->dec_ref_pic_marking;
+	if( 5 == m_nal_data.nal_unit_type)
+	{
+		READ_BITS(dec_ref_pic_marking.no_output_of_prior_pics_flag, 1);
+		READ_BITS(dec_ref_pic_marking.long_term_reference_flag, 1);
+	}
+	else
+	{
+		READ_BITS(dec_ref_pic_marking.adaptive_ref_pic_marking_mode_flag, 1);
+		if(dec_ref_pic_marking.adaptive_ref_pic_marking_mode_flag)
+		{
+			for(auto &item : dec_ref_pic_marking.memory_management_control)
+			{
+				READ_EC(read_ue, item.memory_management_control_operation);
+				if(0 == item.memory_management_control_operation)
+					break;
+				if( 1 == item.memory_management_control_operation ||
+					3 == item.memory_management_control_operation)
+				{
+					READ_EC(read_ue, item.difference_of_pic_nums_minus1);
+				}
+				if(2 == item.memory_management_control_operation)
+				{
+					READ_EC(read_ue, item.long_term_pic_num);
+				}
+				if( 6 == item.memory_management_control_operation ||
+					3 == item.memory_management_control_operation)
+				{
+					READ_EC(read_ue, item.long_term_frame_idx);
+				}
+				if(2 == item.memory_management_control_operation)
+				{
+					READ_EC(read_ue, item.max_long_term_frame_idx_plus1);
+				}
+			}
+		}
+	}
+	return state;
+error:
+	return state;
+}
+
+boost::property_tree::ptree RefPicListReordering::get_json_value()
+{
+	boost::property_tree::ptree root;
+	return root;
+}
+
+boost::property_tree::ptree PredWeightTable::get_json_value()
+{
+	boost::property_tree::ptree root;
+	return root;
+}
+
+boost::property_tree::ptree DecRefPicMarking::get_json_value()
+{
+	boost::property_tree::ptree root;
+	return root;
+}
+
+boost::property_tree::ptree SliceHeader::get_json_value()
+{
+	boost::property_tree::ptree root;
+	return root;
+}
+
+eRbspState slice_data()
+{
+}
+
+eRbspState rbsp_slice_trailing_bits()
+{
+}
+
+boost::property_tree::ptree IDR::get_json_value()
+{
+	boost::property_tree::ptree root;
 	return root;
 }

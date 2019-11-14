@@ -18,10 +18,18 @@ typedef enum eRbspState
 	E_RBSP_STATE_UNKNOWN
 }eRbspState;
 
+struct NalUnitData
+{
+	uint8_t forbidden_zero_bit;
+	uint8_t nal_ref_idc;
+	uint8_t nal_unit_type;
+	std::vector<uint8_t> rbsp_data;
+};
+
 class Rbsp
 {
 public:
-	Rbsp(std::vector<uint8_t> data);
+	Rbsp(NalUnitData data);
 	eRbspState read_ue(uint32_t& value);
 	eRbspState read_se(int32_t& value);
 	eRbspState read_me(uint32_t& value);
@@ -37,6 +45,7 @@ public:
 	eRbspState parse_scaling_list(std::array<uint8_t, SIZE>& scaling_list, uint8_t& matix_flag);
 protected:
 	BitBuffer m_buffer;
+	NalUnitData m_nal_data;
 };
 
 struct HrdParam;
@@ -66,7 +75,8 @@ class SPS : public Rbsp
 {
 public:
 	friend class PPS;
-	SPS(std::vector<uint8_t> data);
+	friend class IDR;
+	SPS(NalUnitData data);
 	eRbspState parse();
 	boost::property_tree::ptree get_json_value();
 private:
@@ -80,7 +90,8 @@ struct PPSData;
 class PPS : public Rbsp
 {
 public:
-	PPS(std::vector<uint8_t> data, std::vector<std::shared_ptr<SPS>> sps);
+	friend class IDR;
+	PPS(NalUnitData data, std::vector<std::shared_ptr<SPS>> sps);
 	eRbspState parse();
 	boost::property_tree::ptree get_json_value();
 private:
@@ -96,4 +107,42 @@ public:
 private:
 	
 }*/
+
+typedef enum _eH264SliceType
+{
+  H264_P_SLICE    = 0,
+  H264_B_SLICE    = 1,
+  H264_I_SLICE    = 2,
+  H264_SP_SLICE   = 3,
+  H264_SI_SLICE   = 4,
+  H264_S_P_SLICE  = 5,
+  H264_S_B_SLICE  = 6,
+  H264_S_I_SLICE  = 7,
+  H264_S_SP_SLICE = 8,
+  H264_S_SI_SLICE = 9
+}eH264SliceType;
+
+struct SliceHeader;
+struct RefPicListReordering;
+struct PredWeightTable;
+struct DecRefPicMarking;
+
+class IDR : public Rbsp
+{
+public:
+	IDR(NalUnitData data, std::vector<std::shared_ptr<PPS>> pps);
+	eRbspState parse();
+	boost::property_tree::ptree get_json_value();
+	eRbspState slice_layer_without_partitioning_rbsp();
+	eRbspState slice_header(std::shared_ptr<SliceHeader> header);
+	eRbspState slice_data();
+	eRbspState rbsp_slice_trailing_bits();
+	eRbspState ref_pic_list_reordering(std::shared_ptr<SliceHeader> header);
+	eRbspState pred_weight_table(std::shared_ptr<SliceHeader> header);
+	eRbspState dec_ref_pic_marking(std::shared_ptr<SliceHeader> header);
+private:
+	std::shared_ptr<SliceHeader> m_slice_header;
+	std::vector<std::shared_ptr<PPS>> m_pps;
+};
+
 #endif //__RBSP_HPP__
